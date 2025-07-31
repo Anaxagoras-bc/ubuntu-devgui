@@ -219,16 +219,22 @@ RUN systemctl enable ssh || true \
 # Create startup service to ensure critical services are running and remove nologin
 RUN echo '[Unit]\n\
 Description=Ensure critical services are started and remove nologin\n\
-After=multi-user.target systemd-user-sessions.service\n\
+After=multi-user.target\n\
+Before=systemd-user-sessions.service\n\
 \n\
 [Service]\n\
 Type=oneshot\n\
-ExecStart=/bin/bash -c "systemctl start ssh.service || true; systemctl start vscode-server.service || true; rm -f /run/nologin /etc/nologin /var/run/nologin"\n\
+ExecStartPre=/bin/bash -c "rm -f /run/nologin /etc/nologin /var/run/nologin"\n\
+ExecStart=/bin/bash -c "systemctl start ssh.service || true; systemctl start vscode-server.service || true"\n\
+ExecStartPost=/bin/bash -c "rm -f /run/nologin /etc/nologin /var/run/nologin"\n\
 RemainAfterExit=true\n\
 \n\
 [Install]\n\
 WantedBy=multi-user.target' > /etc/systemd/system/ensure-services.service \
     && systemctl enable ensure-services.service
+
+# Also disable systemd-user-sessions.service which creates nologin
+RUN systemctl mask systemd-user-sessions.service || true
 
 # Clean up systemd files that don't work in containers
 RUN rm -f /lib/systemd/system/multi-user.target.wants/* \
@@ -262,20 +268,20 @@ if [ ! -f /home/'$USERNAME'/.initialized ]; then\n\
 fi\n\
 \n\
 # Password setup - run every time since /etc/shadow is not persistent\n\
-echo "Setting up password for user '$USERNAME'..."\n\
+echo "Setting up password for user $USERNAME..."\n\
 if [ -n "$USER_PASSWORD_HASH" ]; then\n\
     echo "Using provided password hash"\n\
-    usermod -p "$USER_PASSWORD_HASH" '$USERNAME'\n\
+    usermod -p "$USER_PASSWORD_HASH" $USERNAME\n\
     # Verify it was set\n\
-    if grep -q "^$USERNAME:[^!:*]" /etc/shadow; then\n\
+    if grep -q "^${USERNAME}:[^!:*]" /etc/shadow; then\n\
         echo "Password hash successfully applied"\n\
     else\n\
         echo "WARNING: Password may not have been set correctly"\n\
-        echo "Shadow entry: $(grep "^$USERNAME:" /etc/shadow | cut -d: -f1-2)"\n\
+        echo "Shadow entry: $(grep "^${USERNAME}:" /etc/shadow | cut -d: -f1-2)"\n\
     fi\n\
 elif [ -n "$USER_PASSWORD" ]; then\n\
     echo "Using provided plaintext password"\n\
-    echo "'$USERNAME':$USER_PASSWORD" | chpasswd\n\
+    echo "$USERNAME:$USER_PASSWORD" | chpasswd\n\
     echo "Password set via chpasswd"\n\
 else\n\
     echo "ERROR: Please set either USER_PASSWORD_HASH or USER_PASSWORD environment variable"\n\
@@ -300,6 +306,9 @@ echo "HOST=${VSCODE_HOST:-0.0.0.0}" >> /etc/vscode-server.env\n\
 systemctl daemon-reload || true\n\
 systemctl enable ssh || true\n\
 systemctl enable vscode-server || true\n\
+systemctl enable ensure-services || true\n\
+# Start the ensure-services immediately to remove nologin\n\
+systemctl start ensure-services || true\n\
 \n\
 echo "Container initialization completed at $(date)" >> "$LOGFILE"\n\
 echo "Starting systemd..." >> "$LOGFILE"\n\
