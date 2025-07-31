@@ -275,20 +275,20 @@ if [ ! -f /home/'$USERNAME'/.initialized ]; then\n\
 fi\n\
 \n\
 # Password setup - run every time since /etc/shadow is not persistent\n\
-echo "Setting up password for user $USERNAME..."\n\
+echo "Setting up password for user '$USERNAME'..."\n\
 if [ -n "$USER_PASSWORD_HASH" ]; then\n\
     echo "Using provided password hash"\n\
-    usermod -p "$USER_PASSWORD_HASH" $USERNAME\n\
+    usermod -p "$USER_PASSWORD_HASH" '$USERNAME'\n\
     # Verify it was set\n\
-    if grep -q "^${USERNAME}:[^!:*]" /etc/shadow; then\n\
+    if grep -q "^'$USERNAME':[^!:*]" /etc/shadow; then\n\
         echo "Password hash successfully applied"\n\
     else\n\
         echo "WARNING: Password may not have been set correctly"\n\
-        echo "Shadow entry: $(grep "^${USERNAME}:" /etc/shadow | cut -d: -f1-2)"\n\
+        echo "Shadow entry: $(grep "^'$USERNAME':" /etc/shadow | cut -d: -f1-2)"\n\
     fi\n\
 elif [ -n "$USER_PASSWORD" ]; then\n\
     echo "Using provided plaintext password"\n\
-    echo "$USERNAME:$USER_PASSWORD" | chpasswd\n\
+    echo "'$USERNAME':$USER_PASSWORD" | chpasswd\n\
     echo "Password set via chpasswd"\n\
 else\n\
     echo "ERROR: Please set either USER_PASSWORD_HASH or USER_PASSWORD environment variable"\n\
