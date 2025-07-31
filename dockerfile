@@ -137,7 +137,13 @@ RUN export NVM_DIR="$HOME/.nvm" \
 RUN pipx ensurepath \
     && pipx install poetry
 
-# Configure GNOME to hide Docker volumes and system mounts
+# Switch back to root for system configuration
+USER root
+
+# Configure GNOME to hide Docker volumes from Files sidebar
+# This uses DConf settings + UDev rules to hide loop devices
+
+# Disable automounting behavior via DConf
 RUN mkdir -p /etc/dconf/profile \
     && echo "user-db:user\nsystem-db:local" > /etc/dconf/profile/user \
     && mkdir -p /etc/dconf/db/local.d \
@@ -150,29 +156,23 @@ show-hidden=false\n\
 \n\
 [org/gnome/nautilus/preferences]\n\
 show-hidden-files=false" > /etc/dconf/db/local.d/00-media-handling \
-    && mkdir -p /etc/udev/rules.d \
-    && echo '# Hide Docker overlayfs from GNOME\n\
-ENV{ID_FS_TYPE}=="overlay", ENV{UDISKS_IGNORE}="1"\n\
-# Hide Docker volumes\n\
-ENV{ID_PATH}=="*docker*", ENV{UDISKS_IGNORE}="1"\n\
-# Hide snap volumes\n\
-ENV{ID_PATH}=="*snap*", ENV{UDISKS_IGNORE}="1"' > /etc/udev/rules.d/99-hide-docker-mounts.rules \
     && dconf update || true
 
-# Create gvfs config to hide mounts
-RUN mkdir -p /usr/share/glib-2.0/schemas \
-    && echo '<?xml version="1.0" encoding="UTF-8"?>\n\
-<gschema-list>\n\
-  <schema id="org.gtk.vfs.file-systems" path="/org/gtk/vfs/file-systems/">\n\
-    <key name="blacklist" type="as">\n\
-      <default>["overlay", "aufs", "tmpfs", "shm", "/var/lib/docker", "/sys", "/proc"]</default>\n\
-    </key>\n\
-  </schema>\n\
-</gschema-list>' > /usr/share/glib-2.0/schemas/99-hide-docker-mounts.gschema.override \
-    && glib-compile-schemas /usr/share/glib-2.0/schemas || true
-
-# Switch back to root for system configuration
-USER root
+# UDev rules to hide Docker-related devices from GNOME
+RUN mkdir -p /etc/udev/rules.d \
+    && echo '# Hide Docker overlayfs and related mounts from GNOME\n\
+# Hide overlay filesystem\n\
+SUBSYSTEM=="block", ENV{ID_FS_TYPE}=="overlay", ENV{UDISKS_IGNORE}="1"\n\
+# Hide all loop devices\n\
+SUBSYSTEM=="block", KERNEL=="loop[0-9]*", ENV{UDISKS_IGNORE}="1"\n\
+# Hide device mapper devices\n\
+SUBSYSTEM=="block", KERNEL=="dm-*", ENV{UDISKS_IGNORE}="1"\n\
+# Hide docker volumes by path\n\
+ENV{ID_PATH}=="*docker*", ENV{UDISKS_IGNORE}="1"\n\
+# Hide snap volumes\n\
+ENV{ID_PATH}=="*snap*", ENV{UDISKS_IGNORE}="1"\n\
+# Hide by mount point\n\
+ENV{DEVNAME}=="/dev/loop*", ENV{UDISKS_IGNORE}="1"' > /etc/udev/rules.d/99-hide-docker-mounts.rules
 
 # Add Microsoft GPG key and VS Code repository
 RUN wget -q https://packages.microsoft.com/keys/microsoft.asc -O- | gpg --dearmor | tee /etc/apt/trusted.gpg.d/microsoft.gpg \
