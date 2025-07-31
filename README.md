@@ -127,6 +127,10 @@ The container includes Docker CLI and can optionally connect to the host's Docke
 - 8GB+ RAM recommended for desktop environment
 - 20GB+ disk space
 
+## Built With
+
+This project was fully developed using [Claude Code](https://github.com/anthropics/claude-code) - Anthropic's AI-powered coding assistant.
+
 ## License
 
 [Your License Here]
