@@ -216,14 +216,14 @@ RUN systemctl enable ssh || true \
     && systemctl enable vscode-server || true \
     && chmod 644 /etc/systemd/system/vscode-server.service
 
-# Create startup service to ensure critical services are running
+# Create startup service to ensure critical services are running and remove nologin
 RUN echo '[Unit]\n\
-Description=Ensure critical services are started\n\
-After=multi-user.target\n\
+Description=Ensure critical services are started and remove nologin\n\
+After=multi-user.target systemd-user-sessions.service\n\
 \n\
 [Service]\n\
 Type=oneshot\n\
-ExecStart=/bin/bash -c "systemctl start ssh.service || true; systemctl start vscode-server.service || true"\n\
+ExecStart=/bin/bash -c "systemctl start ssh.service || true; systemctl start vscode-server.service || true; rm -f /run/nologin /etc/nologin /var/run/nologin"\n\
 RemainAfterExit=true\n\
 \n\
 [Install]\n\
