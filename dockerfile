@@ -246,6 +246,12 @@ RUN cp -r /home/$USERNAME /home/${USERNAME}.skel
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
+# Set up logging\n\
+LOGFILE="/var/log/container-init.log"\n\
+exec > >(tee -a "$LOGFILE")\n\
+exec 2>&1\n\
+echo "Container initialization started at $(date)" >> "$LOGFILE"\n\
+\n\
 # Initialize home directory on first run\n\
 if [ ! -f /home/'$USERNAME'/.initialized ]; then\n\
     echo "First run detected, initializing home directory..."\n\
@@ -309,6 +315,9 @@ echo "HOST=${VSCODE_HOST:-0.0.0.0}" >> /etc/vscode-server.env\n\
 systemctl daemon-reload || true\n\
 systemctl enable ssh || true\n\
 systemctl enable vscode-server || true\n\
+\n\
+echo "Container initialization completed at $(date)" >> "$LOGFILE"\n\
+echo "Starting systemd..." >> "$LOGFILE"\n\
 \n\
 exec /sbin/init' > /entrypoint.sh && chmod +x /entrypoint.sh
 

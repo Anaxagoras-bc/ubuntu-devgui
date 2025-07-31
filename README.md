@@ -120,6 +120,12 @@ The container includes Docker CLI and can optionally connect to the host's Docke
 ### Permission issues with mounted volumes
 - Ensure `USER_UID` and `USER_GID` match your host user
 
+### Checking initialization logs
+The container logs all initialization steps to `/var/log/container-init.log`. To view:
+```bash
+docker exec ubuntu-dev cat /var/log/container-init.log
+```
+
 ## Requirements
 
 - Docker Engine 20.10+
