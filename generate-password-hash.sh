@@ -1,7 +1,7 @@
 #!/bin/bash
 
-echo "Password Hash Generator for Docker Dev Environment"
-echo "================================================="
+echo "Yescrypt Password Hash Generator"
+echo "================================"
 echo
 
 # Get username from .env or use default
@@ -11,16 +11,9 @@ else
     USERNAME="default-user"
 fi
 
-# Check if we're using bash
-if [ -z "$BASH_VERSION" ]; then
-    echo "Warning: This script works best with bash. Run with: bash ./generate-password-hash.sh"
-    echo
-fi
-
 # Function to read password portably
 read_password() {
     if [ -t 0 ]; then
-        # Try to turn off echo
         stty -echo 2>/dev/null
         read password
         stty echo 2>/dev/null
@@ -30,30 +23,70 @@ read_password() {
     fi
 }
 
-# Prompt for password
-printf "Enter password for user '$USERNAME': "
-read_password
-password1="$password"
-
-printf "Confirm password: "
-read_password
-password2="$password"
-
-echo
-
-# Check if passwords match
-if [ "$password1" != "$password2" ]; then
-    echo "Passwords do not match!"
-    exit 1
+# Method 1: Try mkpasswd
+if command -v mkpasswd >/dev/null 2>&1; then
+    if mkpasswd -m help 2>&1 | grep -q yescrypt; then
+        echo "Found mkpasswd with yescrypt support!"
+        printf "Enter password for user '$USERNAME': "
+        read_password
+        password1="$password"
+        
+        printf "Confirm password: "
+        read_password
+        password2="$password"
+        
+        if [ "$password1" != "$password2" ]; then
+            echo "Passwords do not match!"
+            exit 1
+        fi
+        
+        echo "Generating yescrypt hash..."
+        hash=$(printf "%s" "$password1" | mkpasswd -m yescrypt -s)
+        echo
+        echo "Add this to your .env file:"
+        echo "USER_PASSWORD_HASH='$hash'"
+        exit 0
+    fi
 fi
 
-# Generate SHA-512 hash (most secure option supported by Linux)
-echo "Generating SHA-512 password hash..."
-hash=$(printf "%s" "$password1" | openssl passwd -6 -stdin)
+# Method 2: Try Python
+if command -v python3 >/dev/null 2>&1; then
+    python_version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+    if [ "$(echo "$python_version >= 3.10" | bc)" -eq 1 ]; then
+        echo "Found Python $python_version with yescrypt support!"
+        printf "Enter password for user '$USERNAME': "
+        read_password
+        password1="$password"
+        
+        printf "Confirm password: "
+        read_password
+        password2="$password"
+        
+        if [ "$password1" != "$password2" ]; then
+            echo "Passwords do not match!"
+            exit 1
+        fi
+        
+        echo "Generating yescrypt hash..."
+        hash=$(python3 -c "import crypt; print(crypt.crypt('$password1', crypt.mksalt(crypt.METHOD_YESCRYPT)))")
+        echo
+        echo "Add this to your .env file:"
+        echo "USER_PASSWORD_HASH='$hash'"
+        exit 0
+    fi
+fi
 
+# Fallback
+echo "Cannot generate yescrypt hash. Options:"
 echo
-echo "Add this to your .env file:"
-echo "USER_PASSWORD_HASH='$hash'"
+echo "1. Install mkpasswd:"
+echo "   Ubuntu/Debian: sudo apt-get install whois"
+echo "   macOS: brew install mkpasswd"
 echo
-echo "Security note: This hash is safe to commit to version control,"
-echo "but .env files should still be in .gitignore as a best practice."
+echo "2. Use Python 3.10+:"
+echo "   python3 -c \"import crypt; print(crypt.crypt('yourpass', crypt.mksalt(crypt.METHOD_YESCRYPT)))\""
+echo
+echo "3. Use plaintext password in .env (recommended):"
+echo "   USER_PASSWORD=yourpassword"
+echo
+echo "The container will hash it correctly."

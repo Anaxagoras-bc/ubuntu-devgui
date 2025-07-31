@@ -41,7 +41,8 @@ RUN apt-get update && apt-get install -y \
     openssh-server \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir /var/run/sshd
+    && mkdir /var/run/sshd \
+    && ssh-keygen -A
 
 # Install full Ubuntu desktop environment
 RUN apt-get update && apt-get install -y \
@@ -110,7 +111,9 @@ RUN systemctl set-default multi-user.target
 # Configure SSH
 RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config \
     && sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config \
-    && echo "AllowUsers $USERNAME" >> /etc/ssh/sshd_config
+    && echo "AllowUsers $USERNAME" >> /etc/ssh/sshd_config \
+    && systemctl enable ssh.service \
+    && systemctl enable sshd.service || true
 
 # Install NVM and Node.js as the user
 USER $USERNAME
@@ -188,7 +191,8 @@ RUN wget -O /usr/local/bin/start-vscode-server.sh https://raw.githubusercontent.
 # Create systemd service for VS Code server (run as user)
 RUN echo '[Unit]\n\
 Description=VS Code Server\n\
-After=network.target\n\
+After=network.target network-online.target\n\
+Wants=network-online.target\n\
 \n\
 [Service]\n\
 Type=simple\n\
@@ -199,16 +203,32 @@ EnvironmentFile=-/etc/vscode-server.env\n\
 ExecStart=/usr/local/bin/start-vscode-server.sh\n\
 Restart=on-failure\n\
 RestartSec=10\n\
+StandardOutput=journal\n\
+StandardError=journal\n\
 \n\
 [Install]\n\
 WantedBy=multi-user.target' > /etc/systemd/system/vscode-server.service
 
 # Enable services and set permissions
-RUN systemctl enable ssh \
-    && systemctl enable nxserver \
-    && systemctl enable docker \
-    && systemctl enable vscode-server \
+RUN systemctl enable ssh || true \
+    && systemctl enable nxserver || true \
+    && systemctl enable docker || true \
+    && systemctl enable vscode-server || true \
     && chmod 644 /etc/systemd/system/vscode-server.service
+
+# Create startup service to ensure critical services are running
+RUN echo '[Unit]\n\
+Description=Ensure critical services are started\n\
+After=multi-user.target\n\
+\n\
+[Service]\n\
+Type=oneshot\n\
+ExecStart=/bin/bash -c "systemctl start ssh.service || true; systemctl start vscode-server.service || true"\n\
+RemainAfterExit=true\n\
+\n\
+[Install]\n\
+WantedBy=multi-user.target' > /etc/systemd/system/ensure-services.service \
+    && systemctl enable ensure-services.service
 
 # Clean up systemd files that don't work in containers
 RUN rm -f /lib/systemd/system/multi-user.target.wants/* \
@@ -224,6 +244,8 @@ RUN cp -r /home/$USERNAME /home/${USERNAME}.skel
 
 # Create entrypoint script for password setting and environment variables
 RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
 # Initialize home directory on first run\n\
 if [ ! -f /home/'$USERNAME'/.initialized ]; then\n\
     echo "First run detected, initializing home directory..."\n\
@@ -235,18 +257,39 @@ fi\n\
 \n\
 # Password setup\n\
 if [ ! -f /home/'$USERNAME'/.password_set ]; then\n\
+    echo "Setting up password for user '$USERNAME'..."\n\
     if [ -n "$USER_PASSWORD_HASH" ]; then\n\
+        echo "Using provided password hash"\n\
+        # Check hash format\n\
+        if [[ "$USER_PASSWORD_HASH" =~ ^\$6\$ ]]; then\n\
+            echo "Hash appears to be SHA-512 format"\n\
+        elif [[ "$USER_PASSWORD_HASH" =~ ^\$y\$ ]]; then\n\
+            echo "Hash appears to be yescrypt format"\n\
+        else\n\
+            echo "WARNING: Hash format may not be recognized"\n\
+        fi\n\
         # Use pre-hashed password\n\
+        echo "Running: usermod -p [HASH] '$USERNAME'"\n\
         usermod -p "$USER_PASSWORD_HASH" '$USERNAME'\n\
+        # Verify it was set\n\
+        if grep -q "^$USERNAME:[^!:*]" /etc/shadow; then\n\
+            echo "Password hash successfully applied"\n\
+        else\n\
+            echo "WARNING: Password may not have been set correctly"\n\
+            echo "Shadow entry: $(grep "^$USERNAME:" /etc/shadow | cut -d: -f1-2)"\n\
+        fi\n\
     elif [ -n "$USER_PASSWORD" ]; then\n\
-        # Use plaintext password (less secure)\n\
+        echo "Using provided plaintext password"\n\
+        # Use plaintext password\n\
         echo "'$USERNAME':$USER_PASSWORD" | chpasswd\n\
+        echo "Password set via chpasswd"\n\
     else\n\
-        echo "Please set either USER_PASSWORD_HASH or USER_PASSWORD environment variable"\n\
-        echo "To generate a password hash, run: openssl passwd -6 -stdin"\n\
+        echo "ERROR: Please set either USER_PASSWORD_HASH or USER_PASSWORD environment variable"\n\
+        echo "To generate a password hash, run: mkpasswd -m yescrypt"\n\
         exit 1\n\
     fi\n\
     touch /home/'$USERNAME'/.password_set\n\
+    echo "Password setup complete"\n\
     unset USER_PASSWORD USER_PASSWORD_HASH\n\
 fi\n\
 \n\
@@ -261,6 +304,11 @@ echo "HOST=${VSCODE_HOST:-0.0.0.0}" >> /etc/vscode-server.env\n\
 [ -n "$VSCODE_VERBOSE" ] && echo "VERBOSE=$VSCODE_VERBOSE" >> /etc/vscode-server.env\n\
 [ -n "$VSCODE_LOG_LEVEL" ] && echo "LOG_LEVEL=$VSCODE_LOG_LEVEL" >> /etc/vscode-server.env\n\
 [ -n "$VSCODE_CLI_DATA_DIR" ] && echo "CLI_DATA_DIR=$VSCODE_CLI_DATA_DIR" >> /etc/vscode-server.env\n\
+\n\
+# Reload systemd and ensure services are enabled\n\
+systemctl daemon-reload || true\n\
+systemctl enable ssh || true\n\
+systemctl enable vscode-server || true\n\
 \n\
 exec /sbin/init' > /entrypoint.sh && chmod +x /entrypoint.sh
 
