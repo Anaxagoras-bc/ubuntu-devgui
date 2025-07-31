@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     software-properties-common \
     unzip \
+    rsync \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -61,6 +62,7 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     pipx \
+    net-tools \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -261,8 +263,13 @@ echo "Container initialization started at $(date)" >> "$LOGFILE"\n\
 # Initialize home directory on first run\n\
 if [ ! -f /home/'$USERNAME'/.initialized ]; then\n\
     echo "First run detected, initializing home directory..."\n\
-    # Copy skeleton files, but dont overwrite existing\n\
-    cp -rn /home/'$USERNAME'.skel/. /home/'$USERNAME'/ 2>/dev/null || true\n\
+    # Use rsync to properly copy all files including hidden ones\n\
+    if command -v rsync >/dev/null 2>&1; then\n\
+        rsync -av --ignore-existing /home/'$USERNAME'.skel/ /home/'$USERNAME'/\n\
+    else\n\
+        # Fallback to tar to properly handle hidden files\n\
+        (cd /home/'$USERNAME'.skel && tar cf - .) | (cd /home/'$USERNAME' && tar xf - --skip-old-files)\n\
+    fi\n\
     chown -R '$USERNAME':'$USERNAME' /home/'$USERNAME'\n\
     touch /home/'$USERNAME'/.initialized\n\
 fi\n\
