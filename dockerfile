@@ -261,43 +261,28 @@ if [ ! -f /home/'$USERNAME'/.initialized ]; then\n\
     touch /home/'$USERNAME'/.initialized\n\
 fi\n\
 \n\
-# Password setup\n\
-if [ ! -f /home/'$USERNAME'/.password_set ]; then\n\
-    echo "Setting up password for user '$USERNAME'..."\n\
-    if [ -n "$USER_PASSWORD_HASH" ]; then\n\
-        echo "Using provided password hash"\n\
-        # Check hash format\n\
-        if [[ "$USER_PASSWORD_HASH" =~ ^\$6\$ ]]; then\n\
-            echo "Hash appears to be SHA-512 format"\n\
-        elif [[ "$USER_PASSWORD_HASH" =~ ^\$y\$ ]]; then\n\
-            echo "Hash appears to be yescrypt format"\n\
-        else\n\
-            echo "WARNING: Hash format may not be recognized"\n\
-        fi\n\
-        # Use pre-hashed password\n\
-        echo "Running: usermod -p [HASH] '$USERNAME'"\n\
-        usermod -p "$USER_PASSWORD_HASH" '$USERNAME'\n\
-        # Verify it was set\n\
-        if grep -q "^$USERNAME:[^!:*]" /etc/shadow; then\n\
-            echo "Password hash successfully applied"\n\
-        else\n\
-            echo "WARNING: Password may not have been set correctly"\n\
-            echo "Shadow entry: $(grep "^$USERNAME:" /etc/shadow | cut -d: -f1-2)"\n\
-        fi\n\
-    elif [ -n "$USER_PASSWORD" ]; then\n\
-        echo "Using provided plaintext password"\n\
-        # Use plaintext password\n\
-        echo "'$USERNAME':$USER_PASSWORD" | chpasswd\n\
-        echo "Password set via chpasswd"\n\
+# Password setup - run every time since /etc/shadow is not persistent\n\
+echo "Setting up password for user '$USERNAME'..."\n\
+if [ -n "$USER_PASSWORD_HASH" ]; then\n\
+    echo "Using provided password hash"\n\
+    usermod -p "$USER_PASSWORD_HASH" '$USERNAME'\n\
+    # Verify it was set\n\
+    if grep -q "^$USERNAME:[^!:*]" /etc/shadow; then\n\
+        echo "Password hash successfully applied"\n\
     else\n\
-        echo "ERROR: Please set either USER_PASSWORD_HASH or USER_PASSWORD environment variable"\n\
-        echo "To generate a password hash, run: mkpasswd -m yescrypt"\n\
-        exit 1\n\
+        echo "WARNING: Password may not have been set correctly"\n\
+        echo "Shadow entry: $(grep "^$USERNAME:" /etc/shadow | cut -d: -f1-2)"\n\
     fi\n\
-    touch /home/'$USERNAME'/.password_set\n\
-    echo "Password setup complete"\n\
-    unset USER_PASSWORD USER_PASSWORD_HASH\n\
+elif [ -n "$USER_PASSWORD" ]; then\n\
+    echo "Using provided plaintext password"\n\
+    echo "'$USERNAME':$USER_PASSWORD" | chpasswd\n\
+    echo "Password set via chpasswd"\n\
+else\n\
+    echo "ERROR: Please set either USER_PASSWORD_HASH or USER_PASSWORD environment variable"\n\
+    exit 1\n\
 fi\n\
+echo "Password setup complete"\n\
+unset USER_PASSWORD USER_PASSWORD_HASH\n\
 \n\
 # Create environment file for VS Code server\n\
 echo "PORT=${VSCODE_PORT:-8585}" > /etc/vscode-server.env\n\
