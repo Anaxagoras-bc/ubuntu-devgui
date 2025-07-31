@@ -33,8 +33,8 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Add user to sudoers
-RUN echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+# Add user to sudoers (with password required)
+RUN echo "$USERNAME ALL=(ALL:ALL) ALL" >> /etc/sudoers
 
 # Install SSH server
 RUN apt-get update && apt-get install -y \
